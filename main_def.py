@@ -354,6 +354,23 @@ def venn_plot(catr, cat, mask_list_MAG, i, j, k, labels, pos='out', title='OUT')
     plt.title('%2.2f %% %s' %(100*out_tot/(len(catr) - len(cat)), title))
     
     return venn_outs
+
+def save_from_venn(catr, vennData, mask, N, outFile):
+    #catr     -- array: catalogue before cuality cuts
+    #vennData -- array: output of venn_plot def. This are the rejected objects by those quality cuts
+    #mask     -- boolen-array: mask (or quality cut) to extract the data alone, without sharing objects with the others
+    #N        -- float: sample size
+    #outFile  -- string: path to store the data
+    #-----------------
+    #return:
+    #RA, DEC, r-MAGNITUDE
+    g, r, z, w1, G, rr = get_mag_decals(catr)
+    sampleCat = catr['RA', 'DEC'][vennData[mask]]
+    sampleCat['rmag'] = r[vennData[mask]]
+    ranSelect = random.sample(range(len(sampleCat)), N)
+    ascii.write(sampleCat[ranSelect], outFile, overwrite=True)
+    
+    return sampleCat[ranSelect]
     
 def load_catOLD(catalog, catT, FILE=True, desitarget=True):
     """Process input catalogue from SWEEPS and apply star-galaxy separation cuts
@@ -756,14 +773,16 @@ def load_cat_caseA(catalog, catT, FILE=True, desitarget=True):
     mask = maskNOBS & maskMAG & maskFRACMASKED & maskFRACFLUX & maskFRACIN & maskFLUX_IVAR & mask_gr & mask_rz & maskBRIGHTSTAR
     print('Lenght DR7 sample after cuts', len(cat0S[mask]))
     
+    cat0S = Table(cat0S)
+    cat0S['Grr'] = Grr
+    
     if desitarget:
         print('adding desitarget and bgstarget column to catalogue...')
         desitarget, bgstarget, idx, d2d = add_desitarget(cat0S, catT)
-        cat0S = Table(cat0S)
+        
         cat0S['desitarget'] = desitarget
         cat0S['bgstarget'] = bgstarget
     print('adding Grr column to catalogue...')
-    cat0S['Grr'] = Grr
 
     return cat0S[mask], cat0S[maskMAG], cat0S, df_M_in, df_M_out, mask_list_MAG, df_dropped
 
@@ -1096,14 +1115,16 @@ def load_cat_caseC(catalog, catT, FILE=True, desitarget=True):
     
     print('Lenght DR7 sample after cuts', len(cat0S[mask]))
     
+    cat0S = Table(cat0S)
+    cat0S['Grr'] = Grr
+    
     if desitarget:
         print('adding desitarget and bgstarget column to catalogue...')
         desitarget, bgstarget, idx, d2d = add_desitarget(cat0S, catT)
-        cat0S = Table(cat0S)
+        
         cat0S['desitarget'] = desitarget
         cat0S['bgstarget'] = bgstarget
     print('adding Grr column to catalogue...')
-    cat0S['Grr'] = Grr
 
     return cat0S[mask], cat0S[mask_ini], cat0S, df_M_in, df_M_out, mask_list_MAG, df_dropped
 
@@ -1271,13 +1292,369 @@ def load_cat_caseD(catalog, catT, FILE=True, desitarget=True):
     
     print('Lenght DR7 sample after cuts', len(cat0S[mask]))
     
+    cat0S = Table(cat0S)
+    cat0S['Grr'] = Grr
+    
     if desitarget:
         print('adding desitarget and bgstarget column to catalogue...')
         desitarget, bgstarget, idx, d2d = add_desitarget(cat0S, catT)
-        cat0S = Table(cat0S)
+        
         cat0S['desitarget'] = desitarget
         cat0S['bgstarget'] = bgstarget
     print('adding Grr column to catalogue...')
-    cat0S['Grr'] = Grr
 
     return cat0S[mask], cat0S[mask_ini], cat0S, df_M_in, df_M_out, mask_list_MAG, df_dropped
+
+#==================================================================================================
+
+
+
+def load_cat_caseCplus(catalog, catT, FILE=True, desitarget=True):
+    """Process input catalogue from SWEEPS and apply star-galaxy separation cuts
+
+    Parameters
+    ----------
+    catalog : :class:`array` 
+        A array catalog from SWEEPS or TRACTOR
+    catT : :class:`array` 
+        Adam M. DESI TARGET catalogue with same footprint as ``caatalog``
+    FILE : :class:`boolean`, optional, defaults to ``True``
+        If ``True``, read ``catalog`` from  fits file. 
+        If ``False``, read from defined array 
+    desitarget : :class:`boolean`, optional, defaults to ``True``
+        If ``True``, match to desitarget catalog and append ``DESI_TARGET`` column
+        
+    Returns
+    -------   
+    cat0S[mask] : :class: `astropy table`
+        ``catalog`` after aplying all star-galaxy separation cuts
+    cat0S[maskMAG] : :class: `astropy table`
+        ``catalog`` after aplying the 15 < r-band < 20 cuts
+    cat0S : :class: `astropy table`
+        ``catalog`` without any cuts
+    df_M_in : :class: `pandas data frame`
+        Matrix of overlaps cuts for the rmag mask (15 < r-band < 20)
+    df_M_out : :class: `pandas data frame`
+        Matrix of overlaps cuts for the rmag mask (r-band < 15, r-band > 20). A.K.A the drops out.
+    mask_list_MAG : :class: `boolean`
+        An array of all the cuts for the ``df_M_in`` and ``df_M_out`` matrices
+    df_dropped : :class: `pandas data frame`
+        Contain the information of the dropped objects by each of the star-galaxy separation cuts for cat0S[maskMAG]. 
+        'drop_r': number of drops out  
+        'drop_r_per': percentage of drops out for the total of len(cat0S[maskMAG]) 
+        'PSF_r_per': percentage of the `PSF` part
+        'NOPSF_r_per': percentage of the `no-PSF` parts
+    """
+    
+    # Load DESI target catalog
+    columns0 = ['RA', 'DEC', 'TYPE', 'DESI_TARGET', 'BRIGHTSTARINBLOB', 'GAIA_PHOT_G_MEAN_MAG', 'NOBS_G', 'NOBS_R', 'NOBS_Z', 'FLUX_G', 
+                'FLUX_R', 'FLUX_Z', 'FLUX_W1', 'MW_TRANSMISSION_G', 'MW_TRANSMISSION_R','MW_TRANSMISSION_Z', 'MW_TRANSMISSION_W1',
+               'FRACMASKED_G', 'FRACMASKED_R', 'FRACMASKED_Z', 'FRACFLUX_G', 'FRACFLUX_R', 'FRACFLUX_Z',
+               'FLUX_IVAR_G', 'FLUX_IVAR_R', 'FLUX_IVAR_Z']
+    
+    if FILE:
+        cat0 = fitsio.read(catalog, columns=columns0)
+        print('Lenght full DR7:',len(cat0))
+        cat0S = cut(200, 230, -2,5, cat0)
+    else:
+        cat0S = catalog
+        print('Lenght raw catalogue:',len(cat0S))
+        
+    objects =  cat0S
+    flux = unextinct_fluxes(objects)
+
+    gflux = flux['GFLUX']
+    rflux = flux['RFLUX']
+    zflux = flux['ZFLUX']
+    w1flux = flux['W1FLUX']
+    w2flux = flux['W2FLUX']
+    objtype = objects['TYPE']
+    release = objects['RELEASE']
+
+    gfluxivar = objects['FLUX_IVAR_G']
+    rfluxivar = objects['FLUX_IVAR_R']
+    zfluxivar = objects['FLUX_IVAR_Z']
+
+    gnobs = objects['NOBS_G']
+    rnobs = objects['NOBS_R']
+    znobs = objects['NOBS_Z']
+
+    gfracflux = objects['FRACFLUX_G']
+    rfracflux = objects['FRACFLUX_R']
+    zfracflux = objects['FRACFLUX_Z']
+
+    gfracmasked = objects['FRACMASKED_G']
+    rfracmasked = objects['FRACMASKED_R']
+    zfracmasked = objects['FRACMASKED_Z']
+
+    gfracin = objects['FRACIN_G']
+    rfracin = objects['FRACIN_R']
+    zfracin = objects['FRACIN_Z']
+    
+    gallmask = objects['ALLMASK_G']
+    rallmask = objects['ALLMASK_R']
+    zallmask = objects['ALLMASK_Z']
+
+    w1snr = objects['FLUX_W1'] * np.sqrt(objects['FLUX_IVAR_W1'])
+    BRIGHTSTARINBLOB = objects['BRIGHTSTARINBLOB']
+    gaiagmag = objects['GAIA_PHOT_G_MEAN_MAG']
+    Grr = gaiagmag - 22.5 + 2.5*np.log10(objects['FLUX_R'])
+
+    maskNOBS = (gnobs>=1) & (rnobs>=1) & (znobs>=1)
+    maskMAG = rflux > 10**((22.5-20.0)/2.5)
+    maskFRACMASKED = (gfracmasked<0.4) & (rfracmasked<0.4) & (zfracmasked<0.4)
+    maskFRACFLUX = (gfracflux<5.0) & (rfracflux<5.0) & (zfracflux<5.0)
+    maskFRACIN = (gfracin>0.3) & (rfracin>0.3) & (zfracin>0.3)
+    maskFLUX_IVAR = (gfluxivar>0) & (rfluxivar>0) & (zfluxivar>0)
+    mask_gr = np.logical_and(rflux > gflux * 10**(-1.0/2.5), rflux < gflux * 10**(4.0/2.5))
+    mask_rz = np.logical_and(zflux > rflux * 10**(-1.0/2.5), zflux < rflux * 10**(4.0/2.5))
+    maskBRIGHTSTAR = np.array([not i for i in BRIGHTSTARINBLOB])
+    
+    maskGrr = Grr > 0.6
+    maskNoGaia = gaiagmag == 0
+    
+    def dropped(catraw, MASK):
+        ND = len(catraw[[not i for i in MASK]])#len(catraw) - np.sum(MASK) # Number objects dropped
+        Per = ND*100/len(catraw) # Percentage of dropped objects from a total in catraw
+        if ND == 0:
+            PSF_per = 0
+            NOPSF_per = 0
+        else:
+            PSF_per = len(catraw[[not i for i in MASK] & (catraw['TYPE'] == b'PSF ')])*100/ND
+            NOPSF_per = len(catraw[[not i for i in MASK] & (catraw['TYPE'] != b'PSF ')])*100/ND
+        
+        return np.array([ND, Per, PSF_per, NOPSF_per])
+    
+    #define the initial mask
+    mask_ini1 = maskMAG & maskBRIGHTSTAR & maskGrr
+    mask_ini2 = maskMAG & maskBRIGHTSTAR & maskNoGaia
+    mask_ini = mask_ini1 | mask_ini2
+    print('Lenght DR7 sample within (r < 20) & (Grr > 0.6) | (gaiagmag == 0):', len(cat0S[mask_ini]))
+    
+    #creating Dropped table -----------------
+    mask_list = np.array([maskNOBS, maskMAG, maskFRACMASKED, maskFRACFLUX, maskFRACIN, maskFLUX_IVAR, mask_gr, mask_rz, maskBRIGHTSTAR])
+    mask_list_names = ( 'maskNOBS', 'maskMAG', 'maskFRACMASKED', 'maskFRACFLUX', 'maskFRACIN', 'maskFLUX_IVAR', 'mask_gr', 'mask_rz', 'maskBRIGHTSTAR')
+    Dropped = [[0 for x in range(4)] for y in range(len(mask_list))] 
+    from itertools import product
+    for i in range(len(mask_list)):
+        Dropped[i] = dropped(cat0S[mask_ini], mask_list[i][mask_ini])
+    df_dropped = pd.DataFrame(Dropped, index=mask_list_names, columns= ('drop_r', 'drop_r_per', 'PSF_r_per', 'NOPSF_r_per'))
+    
+    #------------------------------
+    
+    #creating correlation matrix IN and OUT
+    mask_gr_rz = mask_gr[mask_ini] & mask_rz[mask_ini]
+    mask_list_MAG = np.array([maskNOBS[mask_ini], maskFRACMASKED[mask_ini], maskFRACFLUX[mask_ini], maskFRACIN[mask_ini], maskFLUX_IVAR[mask_ini], maskBRIGHTSTAR[mask_ini], mask_gr_rz])
+    mask_list_MAG_names_in = ('NOBS', 'FRACMASKED', 'FRACFLUX', 'FRACIN', 'FLUX_IVAR', 'BRIGHTSTAR', 'gr-rz')
+    mask_list_MAG_names_out = ('NOBS OUT', 'FRACMASKED OUT', 'FRACFLUX OUT', 'FRACIN OUT', 'FLUX_IVAR OUT', 'BRIGHTSTAR OUT', 'gr-rz OUT')
+
+    cattmp = cat0S[mask_ini]
+    Matrix_in = [[0 for x in range(len(mask_list_MAG))] for y in range(len(mask_list_MAG))]
+    Matrix_out = [[0 for x in range(len(mask_list_MAG))] for y in range(len(mask_list_MAG))] 
+    
+    from itertools import product
+    for i,j in product(range(len(mask_list_MAG)), range(len(mask_list_MAG))):
+        Matrix_in[i][j] = len(cattmp[(mask_list_MAG[i]) & (mask_list_MAG[j])])
+        if i == j:
+            Matrix_out[i][j] = len(cattmp[[not i for i in mask_list_MAG[i]]])
+        else:
+            Matrix_out[i][j] = len(cattmp[[not i for i in mask_list_MAG[i]] & (mask_list_MAG[j])])
+    #-------------------------------------------
+            
+    #print('MATRIX header:%s' %(str(mask_list_MAG_names)))
+
+    df_M_in = pd.DataFrame(Matrix_in, index=mask_list_MAG_names_in, columns=mask_list_MAG_names_in)
+    df_M_out = pd.DataFrame(Matrix_out, index=mask_list_MAG_names_out, columns=mask_list_MAG_names_in)
+    
+    mask = maskNOBS & mask_ini & maskFRACMASKED & maskFRACFLUX & maskFRACIN & maskFLUX_IVAR & mask_gr & mask_rz & maskBRIGHTSTAR 
+    #mask1 = mask & maskGrr
+    #mask2 = mask & maskNoGaia
+    #mask = mask1 | mask2
+    
+    print('Lenght DR7 sample after cuts', len(cat0S[mask]))
+    
+    cat0S = Table(cat0S)
+    cat0S['Grr'] = Grr
+    
+    if desitarget:
+        print('adding desitarget and bgstarget column to catalogue...')
+        desitarget, bgstarget, idx, d2d = add_desitarget(cat0S, catT)
+        
+        cat0S['desitarget'] = desitarget
+        cat0S['bgstarget'] = bgstarget
+    print('adding Grr column to catalogue...')
+    
+    return cat0S[mask], cat0S[mask_ini], cat0S, df_M_in, df_M_out, mask_list_MAG, df_dropped
+
+
+
+
+
+
+
+def load_cat_caseA_SV(catalog, catT, FILE=True, desitarget=True):
+    """Process input catalogue from SWEEPS and apply star-galaxy separation cuts
+
+    Parameters
+    ----------
+    catalog : :class:`array` 
+        A array catalog from SWEEPS or TRACTOR
+    catT : :class:`array` 
+        Adam M. DESI TARGET catalogue with same footprint as ``caatalog``
+    FILE : :class:`boolean`, optional, defaults to ``True``
+        If ``True``, read ``catalog`` from  fits file. 
+        If ``False``, read from defined array 
+    desitarget : :class:`boolean`, optional, defaults to ``True``
+        If ``True``, match to desitarget catalog and append ``DESI_TARGET`` column
+        
+    Returns
+    -------   
+    cat0S[mask] : :class: `astropy table`
+        ``catalog`` after aplying all star-galaxy separation cuts
+    cat0S[maskMAG] : :class: `astropy table`
+        ``catalog`` after aplying the 15 < r-band < 20 cuts
+    cat0S : :class: `astropy table`
+        ``catalog`` without any cuts
+    df_M_in : :class: `pandas data frame`
+        Matrix of overlaps cuts for the rmag mask (15 < r-band < 20)
+    df_M_out : :class: `pandas data frame`
+        Matrix of overlaps cuts for the rmag mask (r-band < 15, r-band > 20). A.K.A the drops out.
+    mask_list_MAG : :class: `boolean`
+        An array of all the cuts for the ``df_M_in`` and ``df_M_out`` matrices
+    df_dropped : :class: `pandas data frame`
+        Contain the information of the dropped objects by each of the star-galaxy separation cuts for cat0S[maskMAG]. 
+        'drop_r': number of drops out  
+        'drop_r_per': percentage of drops out for the total of len(cat0S[maskMAG]) 
+        'PSF_r_per': percentage of the `PSF` part
+        'NOPSF_r_per': percentage of the `no-PSF` parts
+    """
+    
+    # Load DESI target catalog
+    columns0 = ['RA', 'DEC', 'TYPE', 'DESI_TARGET', 'BRIGHTSTARINBLOB', 'GAIA_PHOT_G_MEAN_MAG', 'NOBS_G', 'NOBS_R', 'NOBS_Z', 'FLUX_G', 
+                'FLUX_R', 'FLUX_Z', 'FLUX_W1', 'MW_TRANSMISSION_G', 'MW_TRANSMISSION_R','MW_TRANSMISSION_Z', 'MW_TRANSMISSION_W1',
+               'FRACMASKED_G', 'FRACMASKED_R', 'FRACMASKED_Z', 'FRACFLUX_G', 'FRACFLUX_R', 'FRACFLUX_Z',
+               'FLUX_IVAR_G', 'FLUX_IVAR_R', 'FLUX_IVAR_Z']
+    
+    if FILE:
+        cat0 = fitsio.read(catalog, columns=columns0)
+        print('Lenght full DR7:',len(cat0))
+        cat0S = cut(200, 230, -2,5, cat0)
+    else:
+        cat0S = catalog
+        print('Lenght raw catalogue:',len(cat0S))
+        
+    objects =  cat0S
+    flux = unextinct_fluxes(objects)
+
+    gflux = flux['GFLUX']
+    rflux = flux['RFLUX']
+    zflux = flux['ZFLUX']
+    w1flux = flux['W1FLUX']
+    w2flux = flux['W2FLUX']
+    objtype = objects['TYPE']
+    release = objects['RELEASE']
+
+    gfluxivar = objects['FLUX_IVAR_G']
+    rfluxivar = objects['FLUX_IVAR_R']
+    zfluxivar = objects['FLUX_IVAR_Z']
+
+    gnobs = objects['NOBS_G']
+    rnobs = objects['NOBS_R']
+    znobs = objects['NOBS_Z']
+
+    gfracflux = objects['FRACFLUX_G']
+    rfracflux = objects['FRACFLUX_R']
+    zfracflux = objects['FRACFLUX_Z']
+
+    gfracmasked = objects['FRACMASKED_G']
+    rfracmasked = objects['FRACMASKED_R']
+    zfracmasked = objects['FRACMASKED_Z']
+
+    gfracin = objects['FRACIN_G']
+    rfracin = objects['FRACIN_R']
+    zfracin = objects['FRACIN_Z']
+    
+    gallmask = objects['ALLMASK_G']
+    rallmask = objects['ALLMASK_R']
+    zallmask = objects['ALLMASK_Z']
+
+    w1snr = objects['FLUX_W1'] * np.sqrt(objects['FLUX_IVAR_W1'])
+    BRIGHTSTARINBLOB = objects['BRIGHTSTARINBLOB']
+    gaiagmag = objects['GAIA_PHOT_G_MEAN_MAG']
+    Grr = gaiagmag - 22.5 + 2.5*np.log10(objects['FLUX_R'])
+
+    maskNOBS = (gnobs>=1) & (rnobs>=1) & (znobs>=1)
+    maskMAG = rflux > 10**((22.5-20.2)/2.5)
+    #maskMAG &= rflux <= 10**((22.5-20)/2.5)
+    maskFRACMASKED = (gfracmasked<0.4) & (rfracmasked<0.4) & (zfracmasked<0.4)
+    maskFRACFLUX = (gfracflux<5.0) & (rfracflux<5.0) & (zfracflux<5.0)
+    maskFRACIN = (gfracin>0.3) & (rfracin>0.3) & (zfracin>0.3)
+    maskFLUX_IVAR = (gfluxivar>0) & (rfluxivar>0) & (zfluxivar>0)
+    mask_gr = np.logical_and(rflux > gflux * 10**(-1.0/2.5), rflux < gflux * 10**(4.0/2.5))
+    mask_rz = np.logical_and(zflux > rflux * 10**(-1.0/2.5), zflux < rflux * 10**(4.0/2.5))
+    maskBRIGHTSTAR = np.array([not i for i in BRIGHTSTARINBLOB])
+    
+    def dropped(catraw, MASK):
+        ND = len(catraw[[not i for i in MASK]])#len(catraw) - np.sum(MASK) # Number objects dropped
+        Per = ND*100/len(catraw) # Percentage of dropped objects from a total in catraw
+        if ND == 0:
+            PSF_per = 0
+            NOPSF_per = 0
+        else:
+            PSF_per = len(catraw[[not i for i in MASK] & (catraw['TYPE'] == b'PSF ')])*100/ND
+            NOPSF_per = len(catraw[[not i for i in MASK] & (catraw['TYPE'] != b'PSF ')])*100/ND
+        
+        return np.array([ND, Per, PSF_per, NOPSF_per])
+    
+    print('Lenght DR7 sample within r < 20.2:', len(cat0S[maskMAG]))
+    
+    #creating Dropped table -----------------
+    mask_list = np.array([maskNOBS, maskMAG, maskFRACMASKED, maskFRACFLUX, maskFRACIN, maskFLUX_IVAR, mask_gr, mask_rz, maskBRIGHTSTAR])
+    mask_list_names = ( 'maskNOBS', 'maskMAG', 'maskFRACMASKED', 'maskFRACFLUX', 'maskFRACIN', 'maskFLUX_IVAR', 'mask_gr', 'mask_rz', 'maskBRIGHTSTAR')
+    Dropped = [[0 for x in range(4)] for y in range(len(mask_list))] 
+    from itertools import product
+    for i in range(len(mask_list)):
+        Dropped[i] = dropped(cat0S[maskMAG], mask_list[i][maskMAG])
+    df_dropped = pd.DataFrame(Dropped, index=mask_list_names, columns= ('drop_r', 'drop_r_per', 'PSF_r_per', 'NOPSF_r_per'))
+    
+    #------------------------------
+    
+    #creating correlation matrix IN and OUT
+    mask_gr_rz = mask_gr[maskMAG] & mask_rz[maskMAG]
+    mask_list_MAG = np.array([maskNOBS[maskMAG], maskFRACMASKED[maskMAG], maskFRACFLUX[maskMAG], maskFRACIN[maskMAG], maskFLUX_IVAR[maskMAG], maskBRIGHTSTAR[maskMAG], mask_gr_rz])
+    mask_list_MAG_names_in = ('NOBS', 'FRACMASKED', 'FRACFLUX', 'FRACIN', 'FLUX_IVAR', 'BRIGHTSTAR', 'gr-rz')
+    mask_list_MAG_names_out = ('NOBS OUT', 'FRACMASKED OUT', 'FRACFLUX OUT', 'FRACIN OUT', 'FLUX_IVAR OUT', 'BRIGHTSTAR OUT', 'gr-rz OUT')
+
+    cattmp = cat0S[maskMAG]
+    Matrix_in = [[0 for x in range(len(mask_list_MAG))] for y in range(len(mask_list_MAG))]
+    Matrix_out = [[0 for x in range(len(mask_list_MAG))] for y in range(len(mask_list_MAG))] 
+    
+    from itertools import product
+    for i,j in product(range(len(mask_list_MAG)), range(len(mask_list_MAG))):
+        Matrix_in[i][j] = len(cattmp[(mask_list_MAG[i]) & (mask_list_MAG[j])])
+        if i == j:
+            Matrix_out[i][j] = len(cattmp[[not i for i in mask_list_MAG[i]]])
+        else:
+            Matrix_out[i][j] = len(cattmp[[not i for i in mask_list_MAG[i]] & (mask_list_MAG[j])])
+    #-------------------------------------------
+            
+    #print('MATRIX header:%s' %(str(mask_list_MAG_names)))
+
+    df_M_in = pd.DataFrame(Matrix_in, index=mask_list_MAG_names_in, columns=mask_list_MAG_names_in)
+    df_M_out = pd.DataFrame(Matrix_out, index=mask_list_MAG_names_out, columns=mask_list_MAG_names_in)
+    
+    mask = maskNOBS & maskMAG & maskFRACMASKED & maskFRACFLUX & maskFRACIN & maskFLUX_IVAR & mask_gr & mask_rz & maskBRIGHTSTAR
+    print('Lenght DR7 sample after cuts', len(cat0S[mask]))
+    
+    cat0S = Table(cat0S)
+    cat0S['Grr'] = Grr
+    
+    if desitarget:
+        print('adding desitarget and bgstarget column to catalogue...')
+        desitarget, bgstarget, idx, d2d = add_desitarget(cat0S, catT)
+        
+        cat0S['desitarget'] = desitarget
+        cat0S['bgstarget'] = bgstarget
+    print('adding Grr column to catalogue...')
+
+    return cat0S[mask], cat0S[maskMAG], cat0S, df_M_in, df_M_out, mask_list_MAG, df_dropped
