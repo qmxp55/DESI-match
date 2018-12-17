@@ -30,7 +30,6 @@ def stacked_bar(data, series_labels, category_labels=None,
                 show_values=False, value_format="{}", y_label=None, 
                 grid=True, reverse=False):
     """Plots a stacked bar chart with the data and labels provided.
-
     Keyword arguments:
     data            -- 2-dimensional numpy array or nested list
                        containing data for each series in rows
@@ -374,7 +373,6 @@ def save_from_venn(catr, vennData, mask, N, outFile):
     
 def load_catOLD(catalog, catT, FILE=True, desitarget=True):
     """Process input catalogue from SWEEPS and apply star-galaxy separation cuts
-
     Parameters
     ----------
     catalog : :class:`array` 
@@ -502,15 +500,12 @@ def load_catOLD(catalog, catT, FILE=True, desitarget=True):
 
 def unextinct_fluxes(objects):
     """Calculate unextincted DECam and WISE fluxes
-
     Args:
         objects: array or Table with columns FLUX_G, FLUX_R, FLUX_Z, 
             MW_TRANSMISSION_G, MW_TRANSMISSION_R, MW_TRANSMISSION_Z,
             FLUX_W1, FLUX_W2, MW_TRANSMISSION_W1, MW_TRANSMISSION_W2
-
     Returns:
         array or Table with columns GFLUX, RFLUX, ZFLUX, W1FLUX, W2FLUX
-
     Output type is Table if input is Table, otherwise numpy structured array
     """
     dtype = [('GFLUX', 'f4'), ('RFLUX', 'f4'), ('ZFLUX', 'f4'),
@@ -622,7 +617,6 @@ def MASK(objects, TYPE):
 
 def load_cat_caseA(catalog, catT, FILE=True, desitarget=True):
     """Process input catalogue from SWEEPS and apply star-galaxy separation cuts
-
     Parameters
     ----------
     catalog : :class:`array` 
@@ -789,7 +783,6 @@ def load_cat_caseA(catalog, catT, FILE=True, desitarget=True):
 
 def load_cat_caseB(catalog, catT, FILE=True, desitarget=True):
     """Process input catalogue from SWEEPS and apply star-galaxy separation cuts
-
     Parameters
     ----------
     catalog : :class:`array` 
@@ -953,7 +946,6 @@ def load_cat_caseB(catalog, catT, FILE=True, desitarget=True):
 
 def load_cat_caseC(catalog, catT, FILE=True, desitarget=True):
     """Process input catalogue from SWEEPS and apply star-galaxy separation cuts
-
     Parameters
     ----------
     catalog : :class:`array` 
@@ -1130,7 +1122,6 @@ def load_cat_caseC(catalog, catT, FILE=True, desitarget=True):
 
 def load_cat_caseD(catalog, catT, FILE=True, desitarget=True):
     """Process input catalogue from SWEEPS and apply star-galaxy separation cuts
-
     Parameters
     ----------
     catalog : :class:`array` 
@@ -1311,7 +1302,6 @@ def load_cat_caseD(catalog, catT, FILE=True, desitarget=True):
 
 def load_cat_caseCplus(catalog, catT, FILE=True, desitarget=True):
     """Process input catalogue from SWEEPS and apply star-galaxy separation cuts
-
     Parameters
     ----------
     catalog : :class:`array` 
@@ -1494,7 +1484,6 @@ def load_cat_caseCplus(catalog, catT, FILE=True, desitarget=True):
 
 def load_cat_caseA_SV(catalog, catT, FILE=True, desitarget=True):
     """Process input catalogue from SWEEPS and apply star-galaxy separation cuts
-
     Parameters
     ----------
     catalog : :class:`array` 
@@ -1657,4 +1646,4 @@ def load_cat_caseA_SV(catalog, catT, FILE=True, desitarget=True):
         cat0S['bgstarget'] = bgstarget
     print('adding Grr column to catalogue...')
 
-    return cat0S[mask], cat0S[maskMAG], cat0S, df_M_in, df_M_out, mask_list_MAG, df_dropped
+return cat0S[mask], cat0S[maskMAG], cat0S, df_M_in, df_M_out, mask_list_MAG, df_dropped
